@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Voice Chess</title>
+<meta name="theme-color" content="#14171c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Symbols+2&display=block&text=%E2%99%9A%E2%99%9B%E2%99%9C%E2%99%9D%E2%99%9E%E2%99%9F%EF%B8%8E">
+<style>
+/* Layout: one phone screen. Status (what I heard / what I said) on top, board in the middle,
+   move list below. Night-tournament palette: slate hall, bone and teal-slate board. */
+:root{
+  --bg:#14171c; --panel:#1d2128; --line:#2e343e; --fg:#ece8df; --dim:#9aa1ad;
+  --light:#e9e2d0; --dark:#6f8f8a; --sel:#e8b04a; --last:rgba(232,176,74,.42); --check:#d4553f;
+  --live:#58c98b; --talk:#e8b04a; --think:#7aa7e0;
+  --f-display:"Fraunces",Georgia,serif;
+  --f-ui:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 var(--f-ui);
+  padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px);-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit}
+button:focus-visible{outline:2px solid var(--sel);outline-offset:2px}
+.app{max-width:560px;margin:0 auto;padding-inline:16px;padding-block:12px 24px;display:grid;gap:12px}
+
+header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+h1{font-family:var(--f-display);font-weight:600;font-size:24px;margin:0;letter-spacing:.01em}
+.meta{font-size:12.5px;color:var(--dim);text-align:right;font-family:var(--f-mono);display:grid;gap:4px;justify-items:end}
+.opp{display:flex;align-items:center;gap:6px;white-space:nowrap}
+h1{white-space:nowrap}
+.opp select{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font:500 14px var(--f-mono);cursor:pointer}
+
+.status{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;gap:6px;min-height:92px}
+.state{display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px;letter-spacing:.04em;text-transform:uppercase}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--dim);flex:none}
+.state[data-s="listening"] .dot{background:var(--live);animation:pulse 1.6s infinite}
+.state[data-s="speaking"] .dot{background:var(--talk)}
+.state[data-s="thinking"] .dot{background:var(--think);animation:pulse .8s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(88,201,139,.55)}100%{box-shadow:0 0 0 12px rgba(88,201,139,0)}}
+.heard{font-family:var(--f-mono);font-size:13.5px;color:var(--dim);min-height:1.4em;overflow-wrap:anywhere}
+.said{font-size:17px;min-height:1.4em}
+
+.boardwrap{position:relative}
+.board{display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);aspect-ratio:1;width:100%;max-width:100%;border-radius:6px;overflow:hidden;border:1px solid var(--line);user-select:none;-webkit-user-select:none}
+.sq{position:relative;display:grid;place-items:center;border:0;padding:0;cursor:pointer;background:var(--light);min-width:0;min-height:0;overflow:hidden}
+.sq.d{background:var(--dark)}
+.sq.last::after{content:"";position:absolute;inset:0;background:var(--last)}
+.sq.sel::after{content:"";position:absolute;inset:0;box-shadow:inset 0 0 0 4px var(--sel)}
+.sq.chk{background:radial-gradient(circle,var(--check) 0 45%,transparent 75%),var(--light)}
+.sq.d.chk{background:radial-gradient(circle,var(--check) 0 45%,transparent 75%),var(--dark)}
+.sq.tgt::before{content:"";position:absolute;width:26%;height:26%;border-radius:50%;background:rgba(20,23,28,.28);z-index:1}
+.pc{position:relative;z-index:2;font-size:min(10vw,50px);line-height:1;font-family:"Noto Sans Symbols 2","Segoe UI Symbol","Apple Symbols",serif;font-variant-emoji:text}
+.pc.w{color:#fdfcf8;text-shadow:0 0 1px #1b1d21,0 0 1px #1b1d21,0 0 2px #1b1d21,0 1px 2px rgba(0,0,0,.35)}
+.pc.b{color:#17191d;text-shadow:0 0 1px rgba(255,255,255,.35)}
+.coord{position:absolute;font:500 10px var(--f-mono);color:rgba(20,23,28,.55);z-index:1}
+.coord.f{right:3px;bottom:2px}.coord.r{left:3px;top:2px}
+.blind .pc{visibility:hidden}
+.blindtag{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;font-family:var(--f-display);font-size:28px;color:rgba(20,23,28,.55)}
+
+.moves{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-family:var(--f-mono);font-size:14px;max-height:120px;overflow:auto;display:flex;flex-wrap:wrap;gap:2px 14px;font-variant-numeric:tabular-nums}
+.moves:empty::before{content:"Moves appear here.";color:var(--dim);font-family:var(--f-ui)}
+.moves span b{color:var(--dim);font-weight:400}
+
+details{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+summary{cursor:pointer;font-weight:600}
+.say{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin-top:8px;font-size:14px}
+.say dt{font-family:var(--f-mono);color:var(--sel)}
+.say dd{margin:0;color:var(--dim)}
+
+.start{position:fixed;inset:0;z-index:10;background:rgba(14,16,20,.94);display:grid;place-items:center;padding:24px;text-align:center}
+.start .in{display:grid;gap:16px;max-width:360px}
+.start h2{font-family:var(--f-display);font-size:40px;margin:0;font-weight:600}
+.start p{margin:0;color:var(--dim)}
+.go{background:var(--sel);color:#1b1608;border:0;border-radius:999px;padding:18px 28px;font-weight:600;font-size:18px;cursor:pointer}
+.warn{color:var(--check);font-size:14px}
+@media (prefers-reduced-motion:reduce){.dot{animation:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Voice Chess</h1>
+    <div class="meta">
+      <span id="side">You: White</span>
+      <label class="opp">vs Elo <select id="elo" aria-label="Opponent Elo rating"></select></label>
+    </div>
+  </header>
+
+  <section class="status" aria-live="polite">
+    <div class="state" id="state" data-s="idle"><span class="dot"></span><span id="stateText">Not listening</span></div>
+    <div class="said" id="said">Tap start, then say a move like “pawn to e4”.</div>
+    <div class="heard" id="heard"></div>
+  </section>
+
+  <div class="boardwrap">
+    <div class="board" id="board" aria-label="Chess board"></div>
+  </div>
+
+  <div class="moves" id="moves"></div>
+
+  <details>
+    <summary>Things you can say</summary>
+    <dl class="say">
+      <dt>e4 · pawn to e4</dt><dd>Move a pawn</dd>
+      <dt>knight f3</dt><dd>Move a piece (“to” is optional)</dd>
+      <dt>bishop takes c6</dt><dd>Capture</dd>
+      <dt>castle kingside</dt><dd>Or “short castle”, “castle queenside”, “long castle”</dd>
+      <dt>e8 queen</dt><dd>Promote (queen if you don't say)</dd>
+      <dt>knight from g1 to f3</dt><dd>Say both squares when two pieces could go there</dd>
+      <dt>undo</dt><dd>Take back your last move</dd>
+      <dt>repeat</dt><dd>Hear the computer's last move again</dd>
+      <dt>hint</dt><dd>Get a suggested move</dd>
+      <dt>read the board</dt><dd>Hear where every piece is</dd>
+      <dt>blindfold / show board</dt><dd>Hide or show the pieces</dd>
+      <dt>Elo 1500</dt><dd>Set your opponent's rating, 400 to 3000 (also “fifteen hundred rating”, “easier”, “harder”)</dd>
+      <dt>new game · play black</dt><dd>Start over, as white or black</dd>
+      <dt>flip board</dt><dd>Turn the board around</dd>
+      <dt>pause · resume</dt><dd>Stop reacting until you say “resume”</dd>
+      <dt>resign</dt><dd>Give up this game</dd>
+    </dl>
+  </details>
+</div>
+
+<div class="start" id="start">
+  <div class="in">
+    <h2>Voice Chess</h2>
+    <p>One tap to turn on the microphone. After that, play the whole game by talking. The computer says its moves out loud.</p>
+    <button class="go" id="go">Start listening</button>
+    <p class="warn" id="warn" hidden></p>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+
+/* ---------------- game state ---------------- */
+const game = new Chess();
+let me = store.get('vc.color', 'w');
+let elo = store.get('vc.elo', null) || ({ 1: 600, 2: 1000, 3: 1400, 4: 1800, 5: 2200 })[store.get('vc.level', 0)] || 1200;
+let flipped = me === 'b';
+let blind = store.get('vc.blind', false);
+let selected = null, thinking = false, paused = false, pending = null, lastSpoken = '';
+
+const PIECE_NAME = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
+const GLYPH = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+
+/* ---------------- board ---------------- */
+function render() {
+  const b = $('#board'); b.textContent = '';
+  b.classList.toggle('blind', blind);
+  const hist = game.history({ verbose: true }), last = hist[hist.length - 1];
+  const targets = selected ? game.moves({ square: selected, verbose: true }).map(m => m.to) : [];
+  let kingSq = null;
+  if (game.in_check()) {
+    const t = game.turn(), rows = game.board();
+    rows.forEach((row, ri) => row.forEach((p, fi) => { if (p && p.type === 'k' && p.color === t) kingSq = 'abcdefgh'[fi] + (8 - ri); }));
+  }
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const file = flipped ? 7 - f : f, rank = flipped ? r + 1 : 8 - r;
+    const sq = 'abcdefgh'[file] + rank, p = game.get(sq);
+    const el = document.createElement('button');
+    el.className = 'sq' + ((file + rank) % 2 === 1 ? ' d' : '');
+    if (last && (last.from === sq || last.to === sq)) el.classList.add('last');
+    if (sq === selected) el.classList.add('sel');
+    if (targets.includes(sq)) el.classList.add('tgt');
+    if (sq === kingSq) el.classList.add('chk');
+    el.setAttribute('aria-label', sq + (p ? ' ' + (p.color === 'w' ? 'white ' : 'black ') + PIECE_NAME[p.type] : ''));
+    if (p) { const s = document.createElement('span'); s.className = 'pc ' + p.color; s.textContent = GLYPH[p.type] + '︎'; el.append(s); }
+    if (f === 0) { const c = document.createElement('span'); c.className = 'coord r'; c.textContent = rank; el.append(c); }
+    if (r === 7) { const c = document.createElement('span'); c.className = 'coord f'; c.textContent = 'abcdefgh'[file]; el.append(c); }
+    el.addEventListener('click', () => tap(sq));
+    b.append(el);
+  }
+  if (blind) { const t = document.createElement('div'); t.className = 'blindtag'; t.textContent = 'Blindfold'; b.append(t); }
+  const mv = $('#moves'); mv.textContent = '';
+  const sans = game.history();
+  for (let i = 0; i < sans.length; i += 2) {
+    const s = document.createElement('span');
+    const n = document.createElement('b'); n.textContent = (i / 2 + 1) + '. ';
+    s.append(n, sans[i] + (sans[i + 1] ? ' ' + sans[i + 1] : ''));
+    mv.append(s);
+  }
+  mv.scrollTop = mv.scrollHeight;
+  $('#side').textContent = `You: ${me === 'w' ? 'White' : 'Black'}${engineKind === 'lite' ? ' · lite engine' : ''}`;
+  const sel = $('#elo');
+  if (!sel.options.length) ELOS.forEach(e => sel.add(new Option(e === 3000 ? '3000 (max)' : String(e), e)));
+  sel.value = String(elo);
+}
+function tap(sq) {
+  if (thinking || game.game_over() || game.turn() !== me) return;
+  if (selected) {
+    const m = game.moves({ square: selected, verbose: true }).find(x => x.to === sq);
+    if (m) { selected = null; playerMove({ from: m.from, to: m.to, promotion: 'q' }); return; }
+  }
+  const p = game.get(sq);
+  selected = p && p.color === me ? sq : null;
+  render();
+}
+
+/* ---------------- speech output ---------------- */
+let speaking = false;
+function say(text, { remember = false } = {}) {
+  $('#said').textContent = text;
+  if (remember) lastSpoken = text;
+  return new Promise(res => {
+    if (!('speechSynthesis' in window)) return res();
+    speaking = true; setState('speaking');
+    stopRec();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'en-US'; u.rate = 1.03;
+    const v = pickVoice(); if (v) u.voice = v;
+    let done = false;
+    const fin = () => { if (done) return; done = true; speaking = false; setState(paused ? 'paused' : thinking ? 'thinking' : 'listening'); setTimeout(startRec, 250); res(); };
+    u.onend = fin; u.onerror = fin;
+    setTimeout(fin, 2500 + text.length * 85);
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  });
+}
+let voiceCache = null;
+function pickVoice() {
+  if (voiceCache) return voiceCache;
+  const vs = speechSynthesis.getVoices().filter(v => /^en(-|_)/i.test(v.lang));
+  voiceCache = vs.find(v => /Samantha|Google US English|Aria|Jenny|Daniel/i.test(v.name)) || vs[0] || null;
+  return voiceCache;
+}
+if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => { voiceCache = null; };
+
+const sqWords = sq => sq.toUpperCase();
+function moveToWords(m, who) {
+  let s;
+  if (m.flags.includes('k')) s = 'castles kingside';
+  else if (m.flags.includes('q')) s = 'castles queenside';
+  else {
+    const piece = PIECE_NAME[m.piece];
+    const cap = m.flags.includes('c') || m.flags.includes('e');
+    s = `${piece} ${cap ? 'takes' : 'to'} ${sqWords(m.to)}`;
+    if (m.promotion) s += `, promotes to ${PIECE_NAME[m.promotion]}`;
+  }
+  if (m.san.includes('#')) s += '. Checkmate';
+  else if (m.san.includes('+')) s += ', check';
+  return (who ? who + ' ' : '') + s[0].toUpperCase() + s.slice(1) + '.';
+}
+
+/* ---------------- state display ---------------- */
+function setState(s) {
+  const t = { idle: 'Not listening', listening: 'Listening', speaking: 'Speaking', thinking: 'Thinking', paused: 'Paused · say “resume”' }[s] || s;
+  $('#state').dataset.s = s; $('#stateText').textContent = t;
+}
+
+/* ---------------- speech recognition ---------------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, recOn = false, active = false;
+function startRec() {
+  if (!SR || !active || speaking || recOn) return;
+  rec = new SR();
+  rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = false; rec.maxAlternatives = 5;
+  rec.onresult = e => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (!e.results[i].isFinal || speaking) continue;
+      const alts = Array.from(e.results[i]).map(a => a.transcript.trim()).filter(Boolean);
+      if (alts.length) heard(alts);
+    }
+  };
+  rec.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      active = false; setState('idle');
+      $('#said').textContent = 'Microphone is blocked. Allow microphone access for this site in your browser settings, then reload.';
+    }
+  };
+  rec.onend = () => { recOn = false; if (active && !speaking) setTimeout(startRec, 200); };
+  try { rec.start(); recOn = true; if (!speaking) setState(paused ? 'paused' : thinking ? 'thinking' : 'listening'); } catch { recOn = false; }
+}
+function stopRec() { if (rec) { try { rec.abort(); } catch {} } recOn = false; }
+
+/* ---------------- understanding what was said ---------------- */
+const FILES = { a: ['a', 'alpha', 'ay', 'eh'], b: ['b', 'bravo', 'be', 'bee'], c: ['c', 'charlie', 'see', 'sea', 'si'], d: ['d', 'delta', 'dee'], e: ['e', 'echo'], f: ['f', 'foxtrot', 'eff', 'ef'], g: ['g', 'golf', 'gee', 'jee', 'ji'], h: ['h', 'hotel', 'aitch', 'age', 'each', 'edge'] };
+const RANKS = { 1: ['1', 'one', 'won', 'first'], 2: ['2', 'two', 'to', 'too'], 3: ['3', 'three', 'tree'], 4: ['4', 'four', 'for', 'fore'], 5: ['5', 'five'], 6: ['6', 'six', 'sicks', 'sex'], 7: ['7', 'seven'], 8: ['8', 'eight', 'ate'] };
+const PIECES = { n: ['knight', 'knights', 'night', 'nights', 'nite', 'horse'], b: ['bishop', 'bishops'], r: ['rook', 'rooks', 'rock', 'brook', 'tower'], q: ['queen', 'queens'], k: ['king', 'kings'], p: ['pawn', 'pawns', 'pond', 'porn', 'prawn', 'paul', 'pan'] };
+const lookup = {};
+for (const [k, ws] of Object.entries(FILES)) ws.forEach(w => (lookup[w] = lookup[w] || []).push({ t: 'file', v: k }));
+for (const [k, ws] of Object.entries(RANKS)) ws.forEach(w => (lookup[w] = lookup[w] || []).push({ t: 'rank', v: k }));
+for (const [k, ws] of Object.entries(PIECES)) ws.forEach(w => (lookup[w] = lookup[w] || []).push({ t: 'piece', v: k }));
+['takes', 'take', 'captures', 'capture', 'x', 'by'].forEach(w => (lookup[w] = lookup[w] || []).push({ t: 'take' }));
+['castle', 'castles', 'castling', 'castled'].forEach(w => (lookup[w] = [{ t: 'castle' }]));
+['kingside', 'short'].forEach(w => (lookup[w] = [{ t: 'kside' }]));
+['queenside', 'long'].forEach(w => (lookup[w] = [{ t: 'qside' }]));
+['promote', 'promotes', 'promoting', 'promotion', 'equals'].forEach(w => (lookup[w] = [{ t: 'promo' }]));
+
+function normalize(s) {
+  return s.toLowerCase()
+    .replace(/king\s*-?\s*side/g, ' kingside ').replace(/queen\s*-?\s*side/g, ' queenside ')
+    .replace(/\bo-o-o\b/g, ' castle queenside ').replace(/\bo-o\b/g, ' castle kingside ')
+    .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function symbols(text) {
+  const out = [];
+  for (const tok of normalize(text).split(' ')) {
+    const m = tok.match(/^([a-h])([1-8])$/);
+    if (m) { out.push({ t: 'file', v: m[1] }, { t: 'rank', v: m[2] }); continue; }
+    const m2 = tok.match(/^([a-h])([1-8])([a-h])([1-8])$/);
+    if (m2) { out.push({ t: 'file', v: m2[1] }, { t: 'rank', v: m2[2] }, { t: 'file', v: m2[3] }, { t: 'rank', v: m2[4] }); continue; }
+    const opts = lookup[tok];
+    if (!opts) { out.push({ t: 'word', v: tok }); continue; }
+    const prev = out[out.length - 1];
+    const afterFile = prev && prev.t === 'file';
+    // "to", "for", "ate" etc. only count as a rank right after a file letter
+    const rank = opts.find(o => o.t === 'rank'), file = opts.find(o => o.t === 'file');
+    if (rank && afterFile) out.push(rank);
+    else if (opts.some(o => o.t === 'piece' || o.t === 'take' || o.t === 'castle' || o.t === 'kside' || o.t === 'qside' || o.t === 'promo')) out.push(opts.find(o => o.t !== 'rank' && o.t !== 'file'));
+    else if (file && !['to', 'too', 'for', 'fore', 'won', 'one', 'by'].includes(tok)) out.push(file);
+    else if (rank && /^[1-8]$/.test(tok)) out.push(rank);
+  }
+  return out;
+}
+function parseMove(text) {
+  const sy = symbols(text);
+  const r = { squares: [], piece: null, promo: null, take: false, castle: false, side: null, files: [], chessy: false };
+  let seenSquare = false;
+  for (let i = 0; i < sy.length; i++) {
+    const s = sy[i];
+    if (s.t === 'file') {
+      const n = sy[i + 1];
+      if (n && n.t === 'rank') { r.squares.push(s.v + n.v); i++; seenSquare = true; r.chessy = true; }
+      else r.files.push(s.v);
+    } else if (s.t === 'piece') {
+      r.chessy = true;
+      if (!seenSquare && !r.piece) r.piece = s.v; else r.promo = s.v;
+    } else if (s.t === 'take') r.take = true;
+    else if (s.t === 'castle') { r.castle = true; r.chessy = true; }
+    else if (s.t === 'kside') r.side = 'k';
+    else if (s.t === 'qside') r.side = 'q';
+  }
+  if (r.castle && !r.side && r.piece === 'k') r.side = 'k';
+  if (r.castle && !r.side && r.promo === 'q') r.side = 'q';
+  return r;
+}
+function candidates(p) {
+  let c = game.moves({ verbose: true });
+  if (p.castle) {
+    c = c.filter(m => m.flags.includes('k') || m.flags.includes('q'));
+    if (p.side) c = c.filter(m => m.flags.includes(p.side));
+    return c;
+  }
+  if (!p.squares.length) return [];
+  const to = p.squares[p.squares.length - 1];
+  const from = p.squares.length > 1 ? p.squares[0] : null;
+  c = c.filter(m => m.to === to);
+  if (from) c = c.filter(m => m.from === from);
+  if (p.piece) c = c.filter(m => m.piece === p.piece);
+  else if (c.some(m => m.piece === 'p') && c.some(m => m.piece !== 'p')) c = c.filter(m => m.piece === 'p');
+  if (!from && p.files.length && p.take) { const ff = c.filter(m => m.from[0] === p.files[0]); if (ff.length) c = ff; }
+  if (p.take) { const cc = c.filter(m => m.flags.includes('c') || m.flags.includes('e')); if (cc.length) c = cc; }
+  if (c.some(m => m.promotion)) c = c.filter(m => m.promotion === (p.promo && p.promo !== 'p' && p.promo !== 'k' ? p.promo : 'q'));
+  return c;
+}
+
+const COMMANDS = [
+  [/\b(resume|wake up|start listening|i m back|unpause)\b/, 'resume'],
+  [/\b(pause|stop listening|go to sleep|be quiet)\b/, 'pause'],
+  [/\b(new game|start over|restart|reset)\b/, 'new'],
+  [/\b(play|be|playing) (as )?(black)\b/, 'black'],
+  [/\b(play|be|playing) (as )?(white)\b/, 'white'],
+  [/\b(undo|take back|takeback|go back|take that back)\b/, 'undo'],
+  [/\b(flip|rotate|turn) (the )?board\b|\bflip\b/, 'flip'],
+  [/\bresign\b|\bi give up\b/, 'resign'],
+  [/\b(repeat|say (that|it) again|what was (that|your move|the move)|last move|what did you (play|do))\b/, 'repeat'],
+  [/\b(hint|help me|best move|suggest|what should i (play|do))\b/, 'hint'],
+  [/\b(read|describe|tell me) (the |me the )?(board|position)\b|\bwhere are the pieces\b/, 'read'],
+  [/\b(blindfold|hide (the )?(board|pieces))\b/, 'blind'],
+  [/\b(show (the )?(board|pieces)|unhide|blindfold off)\b/, 'show'],
+  [/\b(elo|e l o|ello|hello|yellow|rating|rated|strength|opponent|level|difficulty)\b/, 'elo'],
+  [/\b(easier|make it easier)\b/, 'easier'],
+  [/\b(harder|make it harder)\b/, 'harder'],
+  [/\b(what can i say|commands|help)\b/, 'help'],
+  [/\b(whose (turn|move)|is it my (turn|move))\b/, 'turn']
+];
+const WORD_NUM = { one: 1, won: 1, two: 2, to: 2, too: 2, three: 3, four: 4, for: 4, five: 5, six: 6, seven: 7, eight: 8, ate: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+// "1500", "1 500", "fifteen hundred", "two thousand two hundred", "level 3" → a number
+function spokenNumber(n) {
+  const d = n.replace(/\b(\d) (\d{3})\b/g, '$1$2').match(/\b\d{1,4}\b/);
+  if (d) return +d[0];
+  let total = 0, cur = 0, any = false, words = n.split(' ');
+  // "to", "for", "won", "ate" are only numbers when nothing else in the phrase is ("set it to fifteen hundred")
+  const SOUNDALIKE = ['to', 'too', 'for', 'won', 'ate'];
+  if (words.some(w => (w in WORD_NUM && !SOUNDALIKE.includes(w)) || w === 'hundred' || w === 'thousand')) words = words.filter(w => !SOUNDALIKE.includes(w));
+  for (const w of words) {
+    if (w in WORD_NUM) { cur += WORD_NUM[w]; any = true; }
+    else if (w === 'hundred') { cur = (cur || 1) * 100; any = true; }
+    else if (w === 'thousand') { total += (cur || 1) * 1000; cur = 0; any = true; }
+  }
+  return any ? total + cur : null;
+}
+
+function heard(alts) {
+  $('#heard').textContent = '“' + alts[0] + '”';
+  // 1. commands (checked on every alternative)
+  for (const a of alts) {
+    const n = normalize(a);
+    if (n.includes('blindfold off')) return command('show', n);
+    for (const [re, cmd] of COMMANDS) if (re.test(n)) return command(cmd, n);
+  }
+  if (paused) return;
+  // 2. answering "which knight?"
+  if (pending) {
+    for (const a of alts) {
+      const p = parseMove(a);
+      const m = pending.find(x => p.squares.includes(x.from) || (p.files.length && x.from[0] === p.files[0] && pending.filter(y => y.from[0] === p.files[0]).length === 1));
+      if (m) { pending = null; return playerMove(m); }
+    }
+  }
+  // 3. moves
+  if (thinking) return;
+  if (game.game_over()) return say('The game is over. Say “new game” to play again.');
+  if (game.turn() !== me) return;
+  let ambiguous = null, chessy = false;
+  for (const a of alts) {
+    const p = parseMove(a);
+    if (!p.chessy) continue;
+    chessy = true;
+    const c = candidates(p);
+    if (c.length === 1) { pending = null; return playerMove(c[0]); }
+    if (c.length > 1 && !ambiguous) ambiguous = c;
+  }
+  if (ambiguous) {
+    pending = ambiguous;
+    const kinds = new Set(ambiguous.map(m => m.piece));
+    const name = kinds.size === 1 ? PIECE_NAME[ambiguous[0].piece] : 'piece';
+    return say(`Which ${name}? The one on ${ambiguous.map(m => sqWords(m.from)).join(' or ')}?`);
+  }
+  if (chessy) say(`I couldn't find a legal move for “${alts[0]}”. Try again.`);
+}
+
+async function command(cmd, n) {
+  if (paused && cmd !== 'resume') return;
+  switch (cmd) {
+    case 'pause': paused = true; setState('paused'); return say('Paused. Say “resume” when you are ready.');
+    case 'resume': paused = false; setState('listening'); return say(game.turn() === me && !game.game_over() ? 'Back on. Your move.' : 'Back on.');
+    case 'new': return newGame(me);
+    case 'black': return newGame('b');
+    case 'white': return newGame('w');
+    case 'undo': return undo();
+    case 'flip': flipped = !flipped; render(); return say('Board flipped.');
+    case 'resign': if (game.game_over()) return; endGame('You resigned. Say “new game” to play again.'); return;
+    case 'repeat': return say(lastSpoken || 'No moves yet.');
+    case 'hint': return hint();
+    case 'read': return say(describe());
+    case 'blind': blind = true; store.set('vc.blind', true); render(); return say('Blindfold on. Say “read the board” any time.');
+    case 'show': blind = false; store.set('vc.blind', false); render(); return say('Board visible.');
+    case 'easier': return setElo(ELOS[Math.max(0, ELOS.indexOf(elo) - 1)]);
+    case 'harder': return setElo(ELOS[Math.min(ELOS.length - 1, ELOS.indexOf(elo) + 1)]);
+    case 'elo': {
+      let v = spokenNumber(n);
+      if (v != null && v >= 1 && v <= 5) v = ({ 1: 600, 2: 1000, 3: 1400, 4: 1800, 5: 2200 })[v]; // "level 3"
+      if (v == null || v < 100) return say(`Your opponent is rated ${elo}. Say a number like “Elo 1500” to change it.`);
+      return setElo(v);
+    }
+    case 'help': return say('Say a move like knight f3, pawn takes d5, or castle kingside. You can also say undo, hint, repeat, read the board, blindfold, Elo 1500, easier, harder, new game, or play black.');
+    case 'turn': return say(game.game_over() ? 'The game is over.' : game.turn() === me ? 'It is your move.' : 'I am thinking.');
+  }
+}
+function setElo(v, quiet) {
+  elo = ELOS.reduce((a, b) => Math.abs(b - v) < Math.abs(a - v) ? b : a);
+  store.set('vc.elo', elo); render();
+  if (!quiet) return say(`Opponent set to ${elo} Elo.${engineKind === 'lite' && elo > 1400 ? ' The backup engine plays at about 1400 at most.' : ''}`);
+}
+$('#elo').addEventListener('change', e => setElo(+e.target.value, true));
+function describe() {
+  const parts = { w: [], b: [] }, order = 'kqrbnp';
+  game.board().forEach((row, ri) => row.forEach((p, fi) => { if (p) parts[p.color].push([order.indexOf(p.type), `${PIECE_NAME[p.type]} ${sqWords('abcdefgh'[fi] + (8 - ri))}`]); }));
+  const fmt = arr => arr.sort((a, b) => a[0] - b[0]).map(x => x[1]).join(', ');
+  return `White: ${fmt(parts.w)}. Black: ${fmt(parts.b)}. ${game.turn() === me ? 'Your move.' : ''}`;
+}
+
+/* ---------------- moves & game flow ---------------- */
+async function playerMove(m) {
+  const r = game.move({ from: m.from, to: m.to, promotion: m.promotion || 'q' });
+  if (!r) return say('That move is not legal.');
+  selected = null; pending = null; render();
+  if (game.game_over()) return endGame();
+  await say(moveToWords(r, 'You:'));
+  engineTurn();
+}
+async function engineTurn() {
+  if (game.game_over() || game.turn() === me) return;
+  thinking = true; if (!speaking) setState('thinking');
+  const fen = game.fen();
+  let mv = null;
+  try { mv = await bestMove(fen, eloSettings(elo)); } catch { mv = null; }
+  if (game.fen() !== fen) { thinking = false; return; } // game changed while thinking (undo/new game)
+  const r = mv && game.move(mv) || game.move(game.moves()[0]);
+  thinking = false; render();
+  const words = moveToWords(r);
+  lastSpoken = words;
+  if (game.game_over()) return endGame(words);
+  say(words, { remember: true });
+}
+function endGame(prefix) {
+  let msg = prefix ? prefix + ' ' : '';
+  if (game.in_checkmate()) msg += game.turn() === me ? 'Checkmate. I win. ' : 'Checkmate. You win! ';
+  else if (game.in_stalemate()) msg += 'Stalemate. It is a draw. ';
+  else if (game.in_threefold_repetition()) msg += 'Draw by repetition. ';
+  else if (game.insufficient_material()) msg += 'Draw. Not enough material to checkmate. ';
+  else if (game.in_draw()) msg += 'Draw. ';
+  if (!/new game/.test(msg)) msg += 'Say “new game” to play again.';
+  render(); say(msg.trim());
+}
+function undo() {
+  if (thinking) { cancelSearch(); thinking = false; }
+  const h = game.history({ verbose: true });
+  if (!h.length) return say('Nothing to undo.');
+  if (game.turn() === me) { game.undo(); if (game.history().length && game.turn() !== me) game.undo(); }
+  else game.undo();
+  if (game.turn() !== me) { render(); say('Undone.'); return engineTurn(); }
+  selected = null; pending = null; render();
+  return say('Undone. Your move.');
+}
+function newGame(color) {
+  cancelSearch(); thinking = false;
+  game.reset(); me = color; store.set('vc.color', me); flipped = me === 'b';
+  selected = null; pending = null; lastSpoken = ''; render();
+  if (me === 'w') return say('New game. You are white. Your move.');
+  say('New game. You are black. I will start.').then(engineTurn);
+}
+async function hint() {
+  if (game.turn() !== me || game.game_over()) return say('It is not your move.');
+  setState('thinking');
+  let mv = null;
+  try { mv = await bestMove(game.fen(), HINT_SET); } catch {}
+  if (!mv) return say('I could not think of a hint.');
+  const g2 = new Chess(game.fen()); const r = g2.move(mv);
+  say('Try ' + moveToWords(r).toLowerCase());
+}
+
+/* ---------------- engine ---------------- */
+// Stockfish (free, open source) runs in a background worker. If it can't load, a small built-in engine plays instead.
+const SF_URL = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js';
+// Approximate Elo targets. This Stockfish build has no Elo option, so each rating combines
+// skill level (0–20), a search-depth cap, a time cap and, at low ratings, a chance of a random move.
+// lite* values are for the fallback engine, which tops out around 1400.
+const ELO_SET = {
+  400: { skill: 0, depth: 1, ms: 100, blunder: .45, liteDepth: 1, noise: 500 },
+  600: { skill: 0, depth: 1, ms: 150, blunder: .3, liteDepth: 1, noise: 350 },
+  800: { skill: 0, depth: 2, ms: 200, blunder: .18, liteDepth: 2, noise: 200 },
+  1000: { skill: 2, depth: 3, ms: 300, blunder: .1, liteDepth: 2, noise: 120 },
+  1200: { skill: 4, depth: 4, ms: 400, blunder: .05, liteDepth: 2, noise: 60 },
+  1400: { skill: 6, depth: 5, ms: 500, blunder: .02, liteDepth: 3, noise: 40 },
+  1600: { skill: 8, depth: 6, ms: 600, blunder: 0, liteDepth: 3, noise: 20 },
+  1800: { skill: 10, depth: 8, ms: 800, blunder: 0, liteDepth: 3, noise: 10 },
+  2000: { skill: 12, depth: 10, ms: 1000, blunder: 0, liteDepth: 3, noise: 5 },
+  2200: { skill: 14, depth: 12, ms: 1200, blunder: 0, liteDepth: 3, noise: 0 },
+  2400: { skill: 16, depth: 14, ms: 1500, blunder: 0, liteDepth: 3, noise: 0 },
+  2600: { skill: 18, depth: 16, ms: 1800, blunder: 0, liteDepth: 3, noise: 0 },
+  2800: { skill: 19, depth: 18, ms: 2000, blunder: 0, liteDepth: 3, noise: 0 },
+  3000: { skill: 20, depth: 22, ms: 2500, blunder: 0, liteDepth: 3, noise: 0 }
+};
+const ANCHORS = Object.keys(ELO_SET).map(Number);
+const ELOS = []; for (let e = 400; e <= 3000; e += 100) ELOS.push(e);
+// Ratings between anchors (e.g. 1500) blend the two neighbouring settings.
+function eloSettings(e) {
+  if (ELO_SET[e]) return ELO_SET[e];
+  const lo = ANCHORS.filter(a => a < e).pop(), hi = ANCHORS.find(a => a > e), t = (e - lo) / (hi - lo);
+  const A = ELO_SET[lo], B = ELO_SET[hi], mix = k => A[k] + (B[k] - A[k]) * t;
+  return { skill: Math.round(mix('skill')), depth: Math.round(mix('depth')), ms: Math.round(mix('ms')), blunder: mix('blunder'), liteDepth: Math.round(mix('liteDepth')), noise: mix('noise') };
+}
+const HINT_SET = { skill: 20, depth: 18, ms: 800, blunder: 0, liteDepth: 3, noise: 0 };
+let sf = null, engineKind = 'loading', sfResolve = null;
+try {
+  const blob = new Blob([`importScripts('${SF_URL}');`], { type: 'application/javascript' });
+  sf = new Worker(URL.createObjectURL(blob));
+  sf.onmessage = e => {
+    const line = typeof e.data === 'string' ? e.data : '';
+    if (line === 'uciok') { engineKind = 'stockfish'; render(); }
+    if (line.startsWith('bestmove') && sfResolve) {
+      const u = line.split(' ')[1]; const r = sfResolve; sfResolve = null;
+      r(u && u !== '(none)' ? { from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] || 'q' } : null);
+    }
+  };
+  sf.onerror = () => { sf = null; engineKind = 'lite'; render(); };
+  sf.postMessage('uci');
+} catch { sf = null; engineKind = 'lite'; }
+setTimeout(() => { if (engineKind === 'loading') { engineKind = 'lite'; render(); } }, 10000);
+
+function bestMove(fen, S) {
+  if (S.blunder && Math.random() < S.blunder) {
+    const ms = new Chess(fen).moves({ verbose: true }), m = ms[Math.floor(Math.random() * ms.length)];
+    return new Promise(res => setTimeout(() => res(m && { from: m.from, to: m.to, promotion: m.promotion || 'q' }), 400));
+  }
+  if (engineKind === 'stockfish' && sf) {
+    return new Promise(res => {
+      if (sfResolve) { sf.postMessage('stop'); sfResolve(null); }
+      sfResolve = res;
+      sf.postMessage(`setoption name Skill Level value ${S.skill}`);
+      sf.postMessage('position fen ' + fen);
+      sf.postMessage(`go depth ${S.depth} movetime ${S.ms}`);
+      setTimeout(() => { if (sfResolve === res) sf.postMessage('stop'); }, S.ms + 4000);
+    });
+  }
+  return new Promise(res => setTimeout(() => res(liteMove(fen, S.liteDepth, S.noise)), 50));
+}
+function cancelSearch() { if (sfResolve && sf) { sf.postMessage('stop'); const r = sfResolve; sfResolve = null; r(null); } }
+
+const VAL = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
+function evalBoard(g) {
+  let s = 0;
+  g.board().forEach((row, ri) => row.forEach((p, fi) => {
+    if (!p) return;
+    const centre = (3.5 - Math.abs(3.5 - fi)) + (3.5 - Math.abs(3.5 - ri));
+    const v = VAL[p.type] + (p.type === 'n' || p.type === 'b' || p.type === 'p' ? centre * 4 : 0);
+    s += p.color === 'w' ? v : -v;
+  }));
+  return s;
+}
+function liteMove(fen, depth, noise) {
+  const g = new Chess(fen), side = g.turn() === 'w' ? 1 : -1;
+  const search = (d, a, b) => {
+    if (g.in_checkmate()) return -100000 - d;
+    if (g.game_over()) return 0;
+    if (d === 0) return evalBoard(g) * (g.turn() === 'w' ? 1 : -1);
+    const ms = g.moves({ verbose: true }).sort((x, y) => (y.captured ? VAL[y.captured] : 0) - (x.captured ? VAL[x.captured] : 0));
+    for (const m of ms) { g.move(m); const v = -search(d - 1, -b, -a); g.undo(); if (v > a) a = v; if (a >= b) break; }
+    return a;
+  };
+  const moves = g.moves({ verbose: true });
+  let best = null, bestV = -Infinity;
+  for (const m of shuffle(moves)) {
+    g.move(m); let v = -search(depth - 1, -Infinity, Infinity); g.undo();
+    v += (Math.random() - .5) * noise;
+    if (v > bestV) { bestV = v; best = m; }
+  }
+  return best && { from: best.from, to: best.to, promotion: best.promotion || 'q' };
+}
+function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+/* ---------------- start ---------------- */
+let wakeLock = null;
+async function keepAwake() { try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch {} }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && active) { keepAwake(); startRec(); } });
+
+$('#go').addEventListener('click', async () => {
+  if (!SR) {
+    const w = $('#warn'); w.hidden = false;
+    w.textContent = 'This browser cannot do speech recognition. Use Safari on iPhone, or Chrome on Android or a computer. You can still tap pieces to move.';
+    $('#go').textContent = 'Play without voice';
+    $('#go').onclick = () => { $('#start').hidden = true; if (game.turn() !== me) engineTurn(); };
+    return;
+  }
+  $('#start').hidden = true;
+  active = true; keepAwake();
+  await say(me === 'w' ? 'Ready. You are white. Say your move.' : 'Ready. You are black. I will start.');
+  startRec();
+  if (game.turn() !== me) engineTurn();
+});
+
+// Testing hook: lets the parser be exercised from the console without a microphone.
+window.voiceChess = { heard: t => heard([t]), parseMove, candidates, game, get engine() { return engineKind; } };
+render();
+})();
+</script>
+</body>
+</html>
